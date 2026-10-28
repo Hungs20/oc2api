@@ -27,19 +27,20 @@ flowchart TD
 ## 目录
 
 - [部署方式](#部署方式)
+  - [Vercel](#vercel)
+  - [Docker](#docker)
+  - [本地运行](#本地运行)
 - [代理订阅与节点池](#代理订阅与节点池)
   - [环境变量](#环境变量)
   - [运行行为](#运行行为)
 - [API](#api)
 - [免费模型](#免费模型)
+  - [免费额度](#免费额度)
 - [开发](#开发)
 
 ## 部署方式
 
-<details>
-<summary><b>1. Vercel</b> — 一键部署，或导入仓库手动部署</summary>
-
-<br>
+### Vercel
 
 **一键部署：**
 
@@ -65,12 +66,7 @@ base64 里的 http、socks5 代理；Clash 多协议订阅需要 Docker 或本�
 你也可以 Fork 后部署多个 Vercel Project 做轮询、负载分摊；多个项目不保证出口 IP 不同，
 需通过各自实例的 `/ip` 核对。
 
-</details>
-
-<details>
-<summary><b>2. Docker</b> — 云函数、容器平台或自建服务器</summary>
-
-<br>
+### Docker
 
 **拉取镜像**
 
@@ -100,12 +96,7 @@ docker run -d --name oc2api --restart unless-stopped \
 cd docker && docker compose up -d --build
 ```
 
-</details>
-
-<details>
-<summary><b>3. 本地运行（Go）</b> — 调试与临时使用</summary>
-
-<br>
+### 本地运行
 
 要求 Go 1.24 或更高版本。
 
@@ -127,8 +118,6 @@ API_KEY=your-key PORT=8080 go run ./cmd/oc2api
 ```bash
 curl http://localhost:8080/health
 ```
-
-</details>
 
 ## 代理订阅与节点池
 
