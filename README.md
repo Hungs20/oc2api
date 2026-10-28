@@ -24,6 +24,16 @@ flowchart TD
 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api)、[QuantumNous/new-api](https://github.com/QuantumNous/new-api)
 做轮询，就能把额度摊到多个出口上。用每个实例的 `/ip` 核对出口是否真的不同。
 
+## 目录
+
+- [部署方式](#部署方式)
+- [代理订阅与节点池](#代理订阅与节点池)
+  - [环境变量](#环境变量)
+  - [运行行为](#运行行为)
+- [API](#api)
+- [免费模型](#免费模型)
+- [开发](#开发)
+
 ## 部署方式
 
 <details>
@@ -47,12 +57,10 @@ flowchart TD
 
 部署完成后会得到一个 `https://<项目名>.vercel.app` 的域名。
 
-构建阶段会自动下载 Go 工具链、编译出 linux 二进制并随函数打包（`scripts/build-go.sh`），
-首次部署大概 1–2 分钟。Vercel 的 Go runtime 会缓冲整段响应，所以 Vercel 上的流式由
-`api/index.js` 这层薄 Node 转发实现，业务逻辑仍然全在 Go 二进制里。
+构建阶段会自动下载 Go 工具链并交叉编译；流式请求由 `api/index.js` 薄层转发，业务逻辑在 Go 二进制里。
 
-Vercel 版用 `-tags nomihomo` 构建，**不打包 mihomo 内核**（二进制约 8 MB），所以只能使用
-纯文本 / URI / base64 里的 http、socks5 代理；Clash 多协议订阅需要 Docker 或本地版本。
+Vercel 版用 `-tags nomihomo` 构建，**不打包 mihomo 内核**（约 8 MB），只能使用纯文本 / URI /
+base64 里的 http、socks5 代理；Clash 多协议订阅需要 Docker 或本地版本。
 
 你也可以 Fork 后部署多个 Vercel Project 做轮询、负载分摊；多个项目不保证出口 IP 不同，
 需通过各自实例的 `/ip` 核对。
@@ -131,7 +139,7 @@ curl http://localhost:8080/health
 订阅格式不限于 Clash：支持 Clash / Mihomo 的 YAML（`proxies:`）、纯文本 `IP:PORT[:USER:PASS]`、
 `http://` / `socks5://` 等 URI 行、base64 包裹；其中 Clash YAML 的多协议节点
 （ss / vmess / vless / trojan / hysteria2 等）由内置 mihomo 解析并拨号。
-Vercel 函数版为了控制包体积不含内核，限制见本节末尾「构建变体」。
+Vercel 函数版为了控制包体积不含内核，限制见 Vercel 部署说明与 [AGENTS.md](AGENTS.md)。
 
 ### 环境变量
 
@@ -155,28 +163,13 @@ docker run -d --name oc2api --restart unless-stopped \
 
 ### 运行行为
 
-- 加载后后台并发探测节点（真实 TLS 握手，不消耗上游额度），只把健康节点投入轮换；
-- 默认每 30 分钟重新拉取订阅；**新节点先在旧池之外探测完，再整体切换**，刷新期间旧节点一直可用；
-  拉取失败、解析为空、或新池探测后没有健康节点时完整保留旧节点池；未变节点按稳定 key 保留健康/冷却状态；
-- 默认 `sticky` 填充：固定用一个健康节点，直到它 429/403/传输失败才换下一个；`round_robin` 则每次请求轮询下一个；
-- 每个请求新建连接；429/403/5xx 或节点不通时自动切换；
-- `GET /ip` 同时返回 `{"direct": {...}, "proxy": {...}}`：直连出口与节点池出口各一份，
-  proxy 那份带实际节点名。每个出口由 `api.ipquery.io`、`ip-api.com`、`1.1.1.1/cdn-cgi/trace`
-  三个来源并发竞速，**谁先返回有效 IP 用谁**；trace 命中时额外返回 `warp/loc/colo`。
-- `GET /health` 返回 `proxy.total / healthy / cooling / unknown`，并默认附带**健康节点列表**
-  （`proxy.nodes`）；可用 `?state=healthy|unhealthy|cooling|all` 切换。节点名不算敏感信息，公开可见；
-  Vercel 无内核构建只返回统计，不返回节点列表。
+- 启动加载订阅并后台探测，只把健康节点投入轮换；
+- 默认 `sticky`：固定用一个健康节点，429/403/传输失败才换；`round_robin` 每次轮询；
+- 每 30 分钟刷新订阅：新节点探测完再整体切换，失败/为空/无健康节点都保留旧池；
+- `GET /ip` 返回 `{direct, proxy}` 两份出口（多来源竞速）；`GET /health` 返回统计 + 健康节点列表，
+  支持 `?state=healthy|unhealthy|cooling|all`。
 
-### 构建变体（内核体积）
-
-| 构建 | 命令 | 二进制约 | 订阅能力 |
-| --- | --- | --- | --- |
-| 无内核（Vercel） | `go build -tags nomihomo ...` | **8.4 MB** | 仅 http/socks5（纯文本、URI、base64）；Clash 多协议不可用 |
-| 带内核（本地 / Docker） | 不加 tag | **46.4 MB** | Clash YAML 全协议：ss/vmess/vless/trojan/hysteria2 等 |
-
-- Vercel 的 `scripts/build-go.sh` 固定加 `-tags nomihomo`；
-- Docker 默认带内核；想要瘦身镜像可 `docker build --build-arg GO_TAGS=nomihomo ...`；
-- 本地 `go run ./cmd/oc2api` 默认带内核。
+> 构建标签、二进制约 8/46 MB 的差异等发布细节见 [AGENTS.md](AGENTS.md)。
 
 ## API
 
@@ -225,13 +218,4 @@ Authorization: Bearer <api-key>
 
 ## 开发
 
-```bash
-go test ./...                     # 离线单元测试
-go test -tags nomihomo ./...      # 无内核构建（Vercel 用）也要过
-go vet ./...
-golangci-lint run ./...           # lint（配置见 .golangci.yml）
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags nomihomo ./cmd/oc2api  # ~8MB
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/oc2api                 # ~46MB，带内核
-```
-
-实现细节（为什么用 uTLS、免费层的形状要求、Vercel 为什么是薄 Node 层）见 [AGENTS.md](AGENTS.md)。
+构建、测试与实现细节（为什么用 uTLS、免费层的形状要求、Vercel 为什么是薄 Node 层）见 [AGENTS.md](AGENTS.md)。
